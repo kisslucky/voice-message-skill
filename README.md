@@ -10,6 +10,14 @@
 
 > 让你的 AI Agent 从"只能打字"升级为"能发语音"。3 步搞定，完全免费。
 
+## Hermes 适配
+
+适用于 Hermes。这个仓库采用标准 `SKILL.md` 结构，Hermes 可通过外部技能目录直接加载。
+
+- 适配方式：把仓库放到 `~/.hermes/skills/` 下，或加入 Hermes 的 `skills.external_dirs`
+- 运行方式：优先用技能自带脚本，必要时显式调用 `${HERMES_SKILL_DIR}/scripts/generate_voice.py`
+- 能力边界：这是一个基于本地脚本和终端工具的 Skill，不依赖 OpenClaw 私有接口
+
 ## 已验证平台
 
 | 平台 | 格式 | 验证时间 |
