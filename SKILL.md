@@ -1,191 +1,125 @@
 ---
-name: wecom-voice
-description: 向支持语音消息的即时通讯平台发送语音消息（企业微信已验证）。使用 edge-tts 生成语音 + ffmpeg 转 AMR 格式 + MEDIA 指令发送。当用户要求"发语音""语音说 xxx""念给我听"时使用此技能。支持 8 种中文音色（默认小艺），完全免费，无需 API Key，适用于所有 OpenClaw + 企微通道及其他支持语音的平台。
+name: voice-message
+description: Send text-to-speech voice messages to chat channels that accept audio attachments or MEDIA uploads. Use when the user asks to send a voice message, speak text aloud, read a reply as audio, or generate platform-specific audio files for WeCom, Feishu, Telegram, WhatsApp, or generic MP3 delivery.
+license: MIT
+metadata:
+  openclaw:
+    emoji: "🎙️"
+    category: "communication"
+    tags: ["voice", "tts", "audio-message", "wecom", "feishu"]
+  hermes:
+    tags: ["communication", "voice", "tts", "audio", "wecom", "feishu"]
+    related_skills: ["wecom-install"]
+    requires_toolsets: [terminal]
 ---
 
-# WeCom Voice — 语音消息 Skill
+# Voice Message
 
-**一句话**：让 AI Agent 能向用户发送真实语音消息，完全免费。
+Turn text into a platform-ready voice file, then hand the file back to the caller for delivery.
 
-**工作流**：
-```
-文字 → edge-tts 生成语音 → ffmpeg 转目标格式 → MEDIA 指令发送
-```
+## Runtime Notes
 
-**各平台语音格式要求**：
+- OpenClaw can use this skill directly as written.
+- Hermes can also use this skill because the package follows the `SKILL.md` convention. If Hermes is not already running inside the skill directory, call the helper script via `${HERMES_SKILL_DIR}/scripts/generate_voice.py`.
 
-| 平台 | 格式 | 命令 |
-|------|------|------|
-| 企业微信 | AMR | `ffmpeg -i in.mp3 -ar 8000 -ac 1 -c:a amr_nb out.amr` |
-| 飞书 | opus/ogg | `ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.ogg` |
-| Telegram | opus/ogg | `ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.ogg` |
-| WhatsApp | opus | `ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.opus` |
+## Core Rules
 
-> 不确定平台时，默认用 AMR 格式（企微要求）。
+1. Prefer `voice-message` as the canonical skill name for new workflows. Treat WeCom as one target platform, not the only one.
+2. Keep the spoken message concise. Default to under 30 seconds unless the user asks for a longer clip.
+3. Match the output format to the destination platform before sending.
+4. If the caller only needs a file, stop after generation. Do not assume a delivery channel.
+5. If generation fails, report which dependency is missing or which conversion step failed.
 
-## 零、效果验证
+## Preflight Check
 
-安装后，运行以下命令验证环境是否就绪：
+Confirm these dependencies before generating audio:
 
-```bash
-python scripts/generate_voice.py "你好，这是一条测试语音" --output /tmp/test_voice.amr
-```
+- `python` is available.
+- `edge-tts` is installed: `python -m edge_tts --version`
+- `ffmpeg` is installed: `ffmpeg -version`
 
-如果输出 `[OK] 完成！AMR 文件: ...` 且文件存在，说明环境配置正确。在 OpenClaw 中配合 MEDIA 指令即可发送语音。
+If a dependency is missing, install it first or tell the caller exactly what is missing.
 
-## 一、安装
+## Platform Mapping
 
-### 1. 安装依赖（2 个，均免费）
+| Platform | Output format | Notes |
+| --- | --- | --- |
+| WeCom | `amr` | Use 8kHz mono AMR-NB. |
+| Feishu | `ogg` | Use Opus in OGG. |
+| Telegram | `ogg` | Use Opus in OGG. |
+| WhatsApp | `opus` | Use Opus. |
+| Generic | `mp3` | Use when the caller only needs a voice file. |
 
-```bash
-# edge-tts - 微软免费语音合成，无需 API Key
-pip install edge-tts
+When the target platform is unclear, default to `generic` and return an MP3.
 
-# ffmpeg - 音频格式转换
-# Windows:
-winget install ffmpeg
-# macOS:
-brew install ffmpeg
-# Ubuntu/Debian:
-sudo apt install ffmpeg
-```
+## Workflow
 
-### 2. 验证安装
+1. Confirm the text to speak and the destination platform.
+2. Pick a voice. Default to `zh-CN-XiaoyiNeural`.
+3. Run the script:
 
 ```bash
-python -m edge_tts --version   # 应输出版本号
-ffmpeg -version                 # 应输出版本号
+python scripts/generate_voice.py "文字内容" --platform wecom
 ```
 
-### 3. 安装 Skill
+4. Return the generated file path.
+5. If the caller supports `MEDIA:` style sending, pass the final path through unchanged.
 
-将 `wecom-voice` 目录放入 OpenClaw 的 skills 目录即可。
+## Common Commands
 
-## 二、触发命令
-
-当用户使用以下表达时，自动触发此 Skill：
-
-| 用户说 | 含义 |
-|--------|------|
-| "发语音" | 用默认音色朗读回复内容 |
-| "语音说 xxx" | 用默认音色说指定文字 |
-| "语音告诉我 xxx" | 同上 |
-| "念给我听" | 同上 |
-| "用 [音色] 说 xxx" | 用指定音色说指定文字 |
-
-**指定音色的说法**：
-- "用小艺说 xxx" → zh-CN-XiaoyiNeural
-- "用晓晓说 xxx" → zh-CN-XiaoxiaoNeural
-- "用云希说 xxx" → zh-CN-YunxiNeural
-- "用云扬说 xxx" → zh-CN-YunyangNeural
-
-## 三、使用方法
-
-### 方法 A：使用脚本（推荐）
+Basic generation:
 
 ```bash
-python scripts/generate_voice.py "文字内容"
+python scripts/generate_voice.py "陈丰哥哥你好，我是阿淘"
 ```
 
-默认音色：zh-CN-XiaoyiNeural（小艺，活泼女声）
-默认平台：wecom（企业微信，AMR 格式）
-
-指定音色：
-```bash
-python scripts/generate_voice.py "文字内容" --voice zh-CN-XiaoxiaoNeural
-```
-
-指定平台（自动转对应格式）：
-```bash
-python scripts/generate_voice.py "文字内容" --platform feishu
-```
-
-指定输出路径：
-```bash
-python scripts/generate_voice.py "文字内容" --platform wecom --output /tmp/voice.amr
-```
-
-脚本会自动完成：edge-tts 生成 → ffmpeg 转目标格式 → 输出 MEDIA 指令。
-
-**完整命令**：
-```bash
-python scripts/generate_voice.py "文字内容" \
-  --voice zh-CN-XiaoyiNeural \
-  --platform wecom \
-  --output /tmp/voice.amr
-```
-
-### 方法 B：手动执行
+Specify a platform:
 
 ```bash
-# Step 1: 生成语音
-python -m edge_tts --voice zh-CN-XiaoyiNeural \
-  --text "陈丰哥哥你好，我是阿淘" \
-  --write-media /tmp/voice.mp3
-
-# Step 2: 转 AMR 格式（企微强制要求）
-ffmpeg -y -i /tmp/voice.mp3 -ar 8000 -ac 1 -c:a amr_nb /tmp/voice.amr
-
-# Step 3: 发送给用户
-MEDIA: /tmp/voice.amr
+python scripts/generate_voice.py "这是一条企微语音" --platform wecom
+python scripts/generate_voice.py "这是一条飞书语音" --platform feishu
 ```
 
-## 四、可用音色（8 种，全部免费）
+Specify a voice:
 
-| 音色 ID | 名称 | 性别 | 风格 |
-|---------|------|------|------|
-| zh-CN-XiaoyiNeural | **小艺** | 女 | 活泼可爱（默认） |
-| zh-CN-XiaoxiaoNeural | 晓晓 | 女 | 温暖亲切 |
-| zh-CN-YunxiNeural | 云希 | 男 | 阳光开朗 |
-| zh-CN-YunjianNeural | 云健 | 男 | 激情有力 |
-| zh-CN-YunyangNeural | 云扬 | 男 | 专业稳重 |
-| zh-CN-YunxiaNeural | 云霞 | 男 | 可爱童趣 |
-| zh-CN-liaoning-XiaobeiNeural | 晓北 | 女 | 辽宁方言 |
-| zh-CN-shaanxi-XiaoniNeural | 晓妮 | 女 | 陕西方言 |
+```bash
+python scripts/generate_voice.py "用晓晓说这句话" --voice zh-CN-XiaoxiaoNeural
+```
 
-## 五、免费优势
+Write to a known location:
 
-| 项目 | 说明 |
-|------|------|
-| **费用** | $0，完全免费 |
-| **API Key** | 不需要 |
-| **注册账号** | 不需要 |
-| **额度限制** | 无官方限制 |
-| **商业使用** | 允许 |
-| **离线依赖** | 仅生成时需要联网（调用 Edge API） |
-| **本地工具** | ffmpeg 完全离线 |
+```bash
+python scripts/generate_voice.py "发给用户的语音" --platform wecom --output D:/openclaw-workspace/outputs/test_voice.amr
+```
 
-## 六、适用平台
+## Voice Selection
 
-任何同时满足以下条件的平台均可使用：
-- 支持 MEDIA 指令（OpenClaw 通道）
-- 支持 AMR 格式语音消息（或可适配其他格式）
-- 有 Python + edge-tts + ffmpeg 环境
+Use these voices unless the caller requests a different one:
 
-**已验证**：
-- ✅ 企业微信（AMR 格式）
-- ✅ 飞书（opus/ogg 格式，格式转换已验证通过）
+| Voice ID | Name | Style |
+| --- | --- | --- |
+| `zh-CN-XiaoyiNeural` | 小艺 | lively default |
+| `zh-CN-XiaoxiaoNeural` | 晓晓 | warm |
+| `zh-CN-YunxiNeural` | 云希 | upbeat male |
+| `zh-CN-YunjianNeural` | 云健 | energetic male |
+| `zh-CN-YunyangNeural` | 云扬 | steady male |
+| `zh-CN-YunxiaNeural` | 云霞 | playful |
+| `zh-CN-liaoning-XiaobeiNeural` | 晓北 | Liaoning dialect |
+| `zh-CN-shaanxi-XiaoniNeural` | 晓妮 | Shaanxi dialect |
 
-**理论支持**（格式已就绪，需对应通道验证）：
-- ⏳ Telegram（opus/ogg）
-- ⏳ WhatsApp（opus）
-- ⏳ Signal（opus）
+## Failure Handling
 
-## 七、注意事项
+- `edge-tts` fails: check Python, network access, and whether `edge-tts` is installed.
+- `ffmpeg` fails: check `ffmpeg -version`, then retry conversion.
+- Wrong file type for the channel: regenerate with the correct `--platform`.
+- File too long: shorten the text and regenerate.
 
-1. **语音只发一次**，不重复发送同一条
-2. 企微语音**必须 AMR 格式**，wav/mp3 不可直接发送
-3. 内容控制在 **30 秒以内**（最佳体验）
-4. 企微语音消息大小上限 **2MB**，15 秒 AMR 约 10-25KB，远低于限制
-5. edge-tts 生成语音时需要联网（调用微软 Edge API），ffmpeg 转换完全离线
+## Validation
 
-## 八、常见问题
+Use a representative command after changes:
 
-**Q: 为什么一定要转 AMR？**
-A: 企业微信语音消息强制要求 AMR 格式，这是企微的技术限制。其他平台可能支持 mp3/wav，需根据平台要求调整。
+```bash
+python scripts/generate_voice.py "你好，这是一条测试语音" --platform generic
+```
 
-**Q: 可以调节语速吗？**
-A: 可以。edge-tts 支持 `--rate` 参数，如 `--rate "+10%"` 加快，`--rate "-10%"` 减慢。
-
-**Q: 支持英文语音吗？**
-A: 支持。使用英文音色（如 en-US-JennyNeural）即可生成英文语音。
+The command is valid if it produces an output file path and exits cleanly.
