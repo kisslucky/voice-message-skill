@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+*.mp3
+*.wav
+*.ogg
+*.opus
+*.silk
+*.amr
